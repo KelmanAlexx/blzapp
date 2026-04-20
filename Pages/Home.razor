@@ -1,0 +1,285 @@
+﻿@page "/"
+@using System.Text
+@using System.Text.Json
+@inject IJSRuntime JS
+#nullable enable
+
+<div class="container-fluid p-4" style="background-color: @appBgColor; min-height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+    <nav class="navbar navbar-expand-lg border-bottom mb-4" style="background: white; border-radius: 8px;">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1" @onclick="ShowMain" style="cursor:pointer">🎨 ColorMaster</span>
+            <div class="navbar-nav">
+                <button class="btn btn-light mx-1" @onclick="ShowMain">Главная</button>
+            
+                <label class="btn btn-light mx-1 mb-0">
+                    Импорт (.palette)
+                    <InputFile OnChange="HandleImport" style="display: none;" />
+                </label>
+
+                <button class="btn btn-outline-primary mx-1" @onclick="HandleExport">Экспорт (.palette)</button>
+            </div>
+        </div>
+    </nav>
+
+    @if (viewMode == "main")
+    {
+        <div class="row mb-4 text-center">
+            <div class="col-md-4">
+                <div class="card p-4 shadow-sm h-100" @onclick="CreateNewPalette" style="cursor:pointer">
+                    <button class="btn btn-dark w-100 mb-2">Создать палитру</button>
+                    <small class="text-muted">Открыть конструктор</small>
+                </div>
+            </div>
+            <div class="col-md-4 text-muted">
+                <div class="card p-4 shadow-sm h-100 bg-light">
+                    <h5>Coming Soon</h5>
+                    <button class="btn btn-outline-secondary disabled w-100">Создать градиент</button>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card p-4 shadow-sm h-100">
+                    <button class="btn btn-dark w-100" @onclick="ShowConverter">Конвертер цветов</button>
+                    <small class="text-muted">Инструменты подбора</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <h4 class="mb-3">Ваши коллекции</h4>
+            @foreach (var palette in savedPalettes)
+            {
+                <div class="col-md-3 col-lg-2 mb-3">
+                    <div class="card p-2 shadow-sm text-center position-relative h-100">
+                        <div class="d-flex mb-2" style="height: 40px; border-radius: 4px; overflow: hidden;">
+                            @foreach (var color in palette.HexColors)
+                            {
+                                <div style="flex:1; background-color:@color;"></div>
+                            }
+                        </div>
+                        <small class="text-truncate d-block fw-bold">@palette.Name</small>
+                        <button class="btn btn-sm btn-link text-danger p-0 mt-1" @onclick="() => DeletePalette(palette)">Удалить</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (viewMode == "editor")
+    {
+        <div class="card p-4 shadow border-0">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3>Конструктор: @currentPalette.Name</h3>
+                <input type="text" class="form-control w-25" @bind="currentPalette.Name" placeholder="Название..." />
+            </div>
+            
+            <div class="d-flex justify-content-around my-4 flex-wrap gap-3">
+                @for (int i = 0; i < currentPalette.HexColors.Count; i++)
+                {
+                    int index = i;
+                    <div class="text-center position-relative" style="min-width: 120px;">
+                        <div class="color-box mb-2 position-relative mx-auto shadow-sm" 
+                             style="width: 110px; height: 110px; background-color: @currentPalette.HexColors[index]; border-radius: 15px; border: 3px solid white;">
+                
+                            <div class="position-absolute" style="top: 8px; right: 8px;">
+                                <input type="checkbox" @bind="currentPalette.IsLocked[index]" 
+                                       style="width: 20px; height: 20px; cursor: pointer; accent-color: #000;" />
+                            </div>
+
+                            @if (currentPalette.IsLocked[index])
+                            {
+                                <div class="position-absolute" style="bottom: 8px; left: 8px; font-size: 1.2rem;">🔒</div>
+                            }
+                        </div>
+                        <input type="text" class="form-control form-control-sm text-center font-monospace fw-bold" 
+                               @bind="currentPalette.HexColors[index]" @bind:event="oninput" />
+                    </div>
+                }
+            </div>
+            
+            <div class="row g-3 mt-2">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Стиль (Тип):</label>
+                    <select class="form-select" @onchange="OnSchemeChange">
+                        <option value="Pastel">Пастель</option>
+                        <option value="Neon">Неон</option>
+                        <option value="Random">Случайный</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Цветовая схема:</label>
+                    <select class="form-select" @onchange="OnSchemeChange">
+                        <option value="monochrome">Монохромная</option>
+                        <option value="base">Базовая</option>
+                        <option value="triad">Триада</option>
+                        <option value="analogous">Аналоговая</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-primary btn-lg w-100" @onclick="GenerateRandom">✨ Рандом</button>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button class="btn btn-success btn-lg w-100" @onclick="SaveCurrentPalette">💾 Сохранить</button>
+                </div>
+            </div>
+            <button class="btn btn-link text-muted mt-3 p-0" @onclick="ShowMain">← Назад</button>
+        </div>
+    }
+    else if (viewMode == "converter")
+    {
+        <div class="card p-4 shadow text-center border-0">
+            <h3 class="mb-4">Конвертер цветов</h3>
+            <div class="row align-items-center">
+                <div class="col-md-6 text-center">
+                     <div class="mx-auto shadow-lg" style="width: 200px; height: 200px; border-radius: 50%; background: conic-gradient(red, yellow, lime, aqua, blue, fuchsia, red); border: 8px solid white;"></div>
+                </div>
+                <div class="col-md-6 border-start">
+                    <div class="p-4 bg-light rounded-4">
+                        <h5 class="mb-3">Выбор цвета</h5>
+                        <input type="color" class="form-control form-control-color w-100 shadow-sm" style="height: 80px;" 
+                               value="@activeColor" @oninput="OnColorPickerChange" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-md-4 mb-2">
+                    <div class="p-3 border rounded bg-white shadow-sm">
+                        <small class="text-muted d-block fw-bold">HEX</small>
+                        <strong class="fs-5">@activeColor.ToUpper()</strong>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <div class="p-3 border rounded bg-white shadow-sm">
+                        <small class="text-muted d-block fw-bold">RGB</small>
+                        <strong class="fs-5">@rgbDisplay</strong>
+                    </div>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <div class="p-3 border rounded bg-white shadow-sm">
+                        <small class="text-muted d-block fw-bold">HSL</small>
+                        <strong class="fs-5">@hslDisplay</strong>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-secondary mt-4" @onclick="ShowMain">Назад</button>
+        </div>
+    }
+</div>
+
+<style>
+    .color-box:hover { transform: translateY(-5px); cursor: pointer; transition: 0.3s; }
+</style>
+
+@code {
+    private string viewMode = "main";
+    private string activeColor = "#3498db";
+    private string rgbDisplay = "rgb(52, 152, 219)";
+    private string hslDisplay = "204°, 70%, 53%";
+    private string appBgColor = "#f8f9fa";
+    private const string StorageKey = "ColorMaster_SavedPalettes";
+    
+    private ColorPalette currentPalette = new();
+    private List<ColorPalette> savedPalettes = new();
+
+    public class ColorPalette {
+        public string Name { get; set; } = "Новая палитра";
+        public List<string> HexColors { get; set; } = new() { "#FF5733", "#33FF57", "#3357FF", "#F333FF", "#FF33A1" };
+        public List<bool> IsLocked { get; set; } = new() { false, false, false, false, false };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", StorageKey);
+            
+            if (!string.IsNullOrEmpty(json))
+            {
+                savedPalettes = JsonSerializer.Deserialize<List<ColorPalette>>(json) ?? GetDefaultPalettes();
+            }
+            else
+            {
+                savedPalettes = GetDefaultPalettes();
+                await SyncStorage();
+            }
+            StateHasChanged();
+        }
+    }
+    
+    private List<ColorPalette> GetDefaultPalettes()
+    {
+        return new List<ColorPalette>
+        {
+            new ColorPalette { Name = "Природа", HexColors = new() { "#2d5a27", "#9cc69b", "#e1eedd", "#4b7a47", "#1a3a18" }, IsLocked = new(){false,false,false,false,false} },
+            new ColorPalette { Name = "Океан", HexColors = new() { "#0077b6", "#00b4d8", "#90e0ef", "#caf0f8", "#03045e" }, IsLocked = new(){false,false,false,false,false} }
+        };
+    }
+
+    private async Task SyncStorage()
+    {
+        var json = JsonSerializer.Serialize(savedPalettes);
+        await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, json);
+    }
+
+    private void ShowMain() => viewMode = "main";
+    private void ShowConverter() => viewMode = "converter";
+    private void CreateNewPalette() { currentPalette = new ColorPalette(); viewMode = "editor"; }
+
+    private void OnColorPickerChange(ChangeEventArgs e) {
+        activeColor = e.Value?.ToString() ?? "#3498db";
+        try {
+            int r = int.Parse(activeColor.Substring(1, 2), System.Globalization.NumberStyles.HexNumber);
+            int g = int.Parse(activeColor.Substring(3, 2), System.Globalization.NumberStyles.HexNumber);
+            int b = int.Parse(activeColor.Substring(5, 2), System.Globalization.NumberStyles.HexNumber);
+            rgbDisplay = $"rgb({r}, {g}, {b})";
+            hslDisplay = CalculateHsl(r, g, b);
+        } catch { }
+    }
+
+    private string CalculateHsl(int r, int g, int b) {
+        float rf = r / 255f; float gf = g / 255f; float bf = b / 255f;
+        float max = Math.Max(rf, Math.Max(gf, bf)); float min = Math.Min(rf, Math.Min(gf, bf));
+        float h = 0, s = 0, l = (max + min) / 2f;
+        if (max != min) {
+            float d = max - min;
+            s = l > 0.5f ? d / (2f - max - min) : d / (max + min);
+            if (max == rf) h = (gf - bf) / d + (gf < bf ? 6 : 0);
+            else if (max == gf) h = (bf - rf) / d + 2;
+            else if (max == bf) h = (rf - gf) / d + 4;
+            h /= 6;
+        }
+        return $"{Math.Round(h * 360)}°, {Math.Round(s * 100)}%, {Math.Round(l * 100)}%";
+    }
+
+    private async Task HandleExport() {
+        var json = JsonSerializer.Serialize(currentPalette, new JsonSerializerOptions { WriteIndented = true });
+        await JS.InvokeVoidAsync("downloadFile", $"{currentPalette.Name}.palette", json);
+    }
+
+    private async Task HandleImport(InputFileChangeEventArgs e) {
+        using var stream = e.File.OpenReadStream();
+        using var reader = new StreamReader(stream);
+        var content = await reader.ReadToEndAsync();
+        var imported = JsonSerializer.Deserialize<ColorPalette>(content);
+        if (imported != null) { currentPalette = imported; viewMode = "editor"; StateHasChanged(); }
+    }
+
+    private void GenerateRandom() {
+        var rnd = new Random();
+        for (int i = 0; i < currentPalette.HexColors.Count; i++)
+            if (!currentPalette.IsLocked[i])
+                currentPalette.HexColors[i] = string.Format("#{0:X6}", rnd.Next(0x1000000));
+    }
+
+    private async Task SaveCurrentPalette() {
+        savedPalettes.Insert(0, currentPalette);
+        await SyncStorage();
+        ShowMain();
+    }
+
+    private async Task DeletePalette(ColorPalette palette) {
+        savedPalettes.Remove(palette);
+        await SyncStorage();
+    }
+
+    private void OnSchemeChange(ChangeEventArgs e) { }
+}
